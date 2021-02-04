@@ -2,26 +2,34 @@ package com.pgmmers.radar.service.impl.model;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
-
-import com.mongodb.MongoClient;
-import com.mongodb.MongoClientURI;
 import com.mongodb.client.model.IndexModel;
 import com.mongodb.client.model.IndexOptions;
 import com.pgmmers.radar.dal.bean.ModelQuery;
 import com.pgmmers.radar.dal.bean.PageResult;
 import com.pgmmers.radar.dal.model.ModelDal;
 import com.pgmmers.radar.enums.FieldType;
-import com.pgmmers.radar.enums.PluginType;
 import com.pgmmers.radar.enums.StatusType;
 import com.pgmmers.radar.service.cache.CacheService;
 import com.pgmmers.radar.service.cache.SubscribeHandle;
 import com.pgmmers.radar.service.common.CommonResult;
-import com.pgmmers.radar.service.impl.util.MongodbUtil;
+import com.pgmmers.radar.service.data.MongoService;
+import com.pgmmers.radar.service.engine.PluginServiceV2;
+import com.pgmmers.radar.service.impl.engine.plugin.PluginManager;
 import com.pgmmers.radar.service.model.ModelService;
 import com.pgmmers.radar.service.search.SearchEngineService;
+import com.pgmmers.radar.util.JsonUtils;
 import com.pgmmers.radar.vo.model.FieldVO;
 import com.pgmmers.radar.vo.model.ModelVO;
 import com.pgmmers.radar.vo.model.PreItemVO;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import javax.annotation.PostConstruct;
 import org.apache.commons.lang3.StringUtils;
 import org.bson.Document;
 import org.slf4j.Logger;
@@ -30,14 +38,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.PostConstruct;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 
 @Service
-public class ModelServiceImpl implements ModelService, SubscribeHandle {
+public class ModelServiceImpl extends BaseLocalCacheService implements ModelService,
+        SubscribeHandle {
+
+    @Override
+    public Object query(Long modelId) {
+        return modelDal.getModelById(modelId);
+    }
+
     public static Logger logger = LoggerFactory
             .getLogger(ModelServiceImpl.class);
 
@@ -47,62 +57,62 @@ public class ModelServiceImpl implements ModelService, SubscribeHandle {
     @Autowired
     private CacheService cacheService;
 
-    @Value("${mongodb.url}")
-    private String url;
-
     @Value("${sys.conf.mongo-restore-days}")
     private Integer eventExpireDays;
 
     @Autowired
     private SearchEngineService searchService;
 
-    private List<ModelVO> modelList = new ArrayList<>();
+    @Autowired
+    private MongoService mongoService;
+
+    //  维护GUID到modelId的映射
+    private Map<String, Long> guidMap;
 
     @PostConstruct
     public void init() {
-        modelList = modelDal.listModel(null);
+        guidMap = modelDal.listModel(null).stream()
+                .collect(Collectors.toMap(ModelVO::getGuid, ModelVO::getId));
         cacheService.subscribeModel(this);
     }
 
     @Override
     public List<ModelVO> listModel(String merchantCode, Integer status) {
-        List<ModelVO> modelList = modelDal.listModel(merchantCode, status);
-        return modelList;
+        return modelDal.listModel(merchantCode, status);
     }
 
     @Override
     public List<ModelVO> listModel(Integer status) {
-        if (modelList == null) {
-            modelList = modelDal.listModel(null);
-        }
-        return modelList;
+        return modelDal.listModel(status);
     }
 
     @Override
     public ModelVO getModelByGuid(String guid) {
-        for (ModelVO mod : modelList) {
-            if (mod.getGuid().equals(guid)) {
-                return mod;
-            }
+        Long modelId = guidMap.get(guid);
+        ModelVO vo = null;
+        if (modelId != null) {
+            vo = (ModelVO) getByCache(modelId);
         }
-        ModelVO model = modelDal.getModelByGuid(guid);
-        return model;
+        if (vo == null) {
+            vo = modelDal.getModelByGuid(guid);
+            //维护guid->modelId 映射数据
+            guidMap.put(vo.getGuid(), vo.getId());
+            localCache.put(vo.getId(),vo);
+        }
+        return vo;
     }
 
     @Override
     public ModelVO getModelById(Long id) {
-        return modelDal.getModelById(id);
+        return (ModelVO) getByCache(id);
     }
 
     @Override
     public void onMessage(String channel, String message) {
-        logger.info("model sub:{}", message);
-        modelList = modelDal.listModel(null);
-    }
-
-    @Override
-    public ModelVO get(Long id) {
-        return modelDal.getModelById(id);
+        logger.info("model update message:{}", message);
+        ModelVO vo = JsonUtils.fromJson(message, ModelVO.class);
+//      删除本地缓存的规则模型
+        invalidateCache(vo.getId());
     }
 
     @Override
@@ -119,6 +129,7 @@ public class ModelServiceImpl implements ModelService, SubscribeHandle {
         ModelQuery query = new ModelQuery();
         query.setMerchantCode(model.getCode());
         query.setLabel(model.getLabel());
+        query.setPageSize(100);
         PageResult<ModelVO> page = modelDal.query(query);
         if (page != null && page.getRowCount() > 0 && (model.getId() == null)) {
             for (ModelVO tmp : page.getList()) {
@@ -128,7 +139,6 @@ public class ModelServiceImpl implements ModelService, SubscribeHandle {
                     return result;
                 }
             }
-
         }
         if (model.getId() == null) {
             model.setStatus(StatusType.INIT.getKey());
@@ -136,11 +146,11 @@ public class ModelServiceImpl implements ModelService, SubscribeHandle {
         }
         int count = modelDal.save(model);
         if (count > 0) {
-        	if(StringUtils.isEmpty(model.getModelName())){
-        		model.setModelName("model" + model.getId());
-        		modelDal.save(model);
-        	}
-        	
+            if (StringUtils.isEmpty(model.getModelName())) {
+                model.setModelName("model" + model.getId());
+                modelDal.save(model);
+            }
+
             result.getData().put("id", model.getId());
             result.setSuccess(true);
             // 通知更新
@@ -150,16 +160,16 @@ public class ModelServiceImpl implements ModelService, SubscribeHandle {
     }
 
     @Override
-    public CommonResult delete(Long[] id) {
+    public CommonResult delete(Long[] ids) {
         CommonResult result = new CommonResult();
-        ModelVO model = modelDal.getModelById(id[0]);
+        ModelVO model = modelDal.getModelById(ids[0]);
         if (model.getTemplate()) {
             result.setCode("701");
             result.setSuccess(false);
             result.setMsg("系统模板禁止删除！");
             return result;
         }
-        int count = modelDal.delete(id);
+        int count = modelDal.delete(ids);
         if (count > 0) {
             result.setSuccess(true);
             // 通知更新
@@ -169,58 +179,56 @@ public class ModelServiceImpl implements ModelService, SubscribeHandle {
     }
 
     @Override
-    public CommonResult build(Long id) {
+    public CommonResult build(Long id) throws IOException {
         CommonResult result = new CommonResult();
-        ModelVO modelVO = modelDal.getModelById(id);
+        ModelVO modelVO = getModelById(id);
         List<FieldVO> fields = modelDal.listField(id);
         List<PreItemVO> items = modelDal.listPreItem(id, null);
-        String tempUrl = url + ".entity_" + id;
-        MongoClientURI uri = new MongoClientURI(tempUrl);
-        MongoClient client = MongodbUtil.getClient(tempUrl);
-        client.getDatabase(uri.getDatabase())
-                .getCollection(uri.getCollection()).drop();
-        client.getDatabase(uri.getDatabase()).createCollection(
-                uri.getCollection());
+        String collectionName = "entity_" + id;
+        mongoService.getCollection(collectionName).drop();
+        mongoService.getMongoTemplate().createCollection(collectionName);
         List<IndexModel> indexes = new ArrayList<>();
 
-        
         if (fields == null) {
             result.setMsg("请先为模型配置字段");
             return result;
         }
         // 为需要索引的字段添加索引
         for (FieldVO field : fields) {
-            if (field.getIndexed().booleanValue()) {
+            if (field.getIndexed()) {
                 Document indexKey = new Document();
                 indexKey.put(field.getFieldName(), 1);
                 IndexModel index = new IndexModel(indexKey);
                 indexes.add(index);
             }
         }
-        
+
         Document ttlKeys = new Document();
         ttlKeys.put("radar_ref_datetime", 1);
         IndexOptions options = new IndexOptions();
-        options.expireAfter((long)eventExpireDays, TimeUnit.DAYS);
+        options.expireAfter((long) eventExpireDays, TimeUnit.DAYS);
         IndexModel ttlIndex = new IndexModel(ttlKeys, options);
 
         indexes.add(ttlIndex);
 
-        client.getDatabase(uri.getDatabase()).getCollection(uri.getCollection()).createIndexes(indexes);
-
-
-
+        mongoService.getCollection(collectionName).createIndexes(indexes);
+//
 
         // 重建es index
         JSONObject total = buildEsMappingJson(fields, items);
 
         // execute
-        boolean isCreated;
-        isCreated = searchService.createIndex(modelVO.getGuid().toLowerCase(), modelVO.getModelName().toLowerCase(), "radar", total.toJSONString());
+        boolean isCreated = searchService
+                .createIndex(modelVO.getGuid().toLowerCase(), modelVO.getModelName().toLowerCase(),
+                        total.toJSONString());
         logger.info("index mapping:{} is create {}", total.toJSONString(), isCreated);
         if (isCreated) {
             modelVO.setStatus(StatusType.INACTIVE.getKey());
-            modelDal.save(modelVO);
+            int save = modelDal.save(modelVO);
+            // 通知更新
+            if (save > 0) {
+                cacheService.publishModel(modelVO);
+            }
         } else {
             result.setMsg("重建索引失败");
         }
@@ -230,9 +238,6 @@ public class ModelServiceImpl implements ModelService, SubscribeHandle {
 
     /**
      * recreate elastic mapping
-     * @param fields
-     * @param items
-     * @return
      */
     private JSONObject buildEsMappingJson(List<FieldVO> fields, List<PreItemVO> items) {
         //
@@ -252,11 +257,11 @@ public class ModelServiceImpl implements ModelService, SubscribeHandle {
         JSONObject preItemJson = new JSONObject();
         for (PreItemVO item : items) {
             String pluginType = item.getPlugin();
-            PluginType plugin = Enum.valueOf(PluginType.class, pluginType);
+            PluginServiceV2 plugin= PluginManager.pluginServiceMap().get(pluginType);
             String columns = plugin.getMeta();
             if (columns == null) {
                 String fieldType = plugin.getType();
-                if(fieldType.equals("JSON")) {
+                if (fieldType.equals("JSON")) {
                     //TODO: json类型需要另外处理
                 } else {
                     String elaType = convertFieldType2ElasticType(fieldType);
@@ -295,14 +300,14 @@ public class ModelServiceImpl implements ModelService, SubscribeHandle {
     }
 
     @Override
-	public CommonResult copy(Long id,String merchantCode,String name,String label) {
-		ModelVO model = modelDal.getModelById(id);
-		model.setModelName(name);
-		model.setLabel(label);
-		model.setCode(merchantCode);
-		
-		CommonResult result = new CommonResult();
-		//检查是否重复
+    public CommonResult copy(Long id, String merchantCode, String name, String label) {
+        ModelVO model = modelDal.getModelById(id);
+        model.setModelName(name);
+        model.setLabel(label);
+        model.setCode(merchantCode);
+
+        CommonResult result = new CommonResult();
+        //检查是否重复
         ModelQuery query = new ModelQuery();
         query.setMerchantCode(model.getCode());
         query.setLabel(model.getLabel());
@@ -317,41 +322,42 @@ public class ModelServiceImpl implements ModelService, SubscribeHandle {
             }
 
         }
-        
+
         int count = modelDal.copy(model);
         if (count > 0) {
-        	if(StringUtils.isEmpty(model.getModelName())){
-        		model.setModelName("model_" + model.getId());
-        		modelDal.save(model);
-        	}
-        	
+            if (StringUtils.isEmpty(model.getModelName())) {
+                model.setModelName("model_" + model.getId());
+                model.setCreateTime(new Date());
+                modelDal.save(model);
+            }
+
             result.getData().put("id", model.getId());
             result.setSuccess(true);
             // 通知更新
             cacheService.publishModel(model);
         }
         return result;
-	}
+    }
 
-	public String convertFieldType2ElasticType(String fieldType) {
+    public String convertFieldType2ElasticType(String fieldType) {
         FieldType type = Enum.valueOf(FieldType.class, fieldType);
         String tmp;
         switch (type) {
-        case STRING:
-            tmp = "keyword";
-            break;
-        case INTEGER:
-            tmp = "integer";
-            break;
-        case LONG:
-            tmp = "long";
-            break;
-        case DOUBLE:
-            tmp = "double";
-            break;
-        default:
-            tmp = "text";
-            break;
+            case STRING:
+                tmp = "keyword";
+                break;
+            case INTEGER:
+                tmp = "integer";
+                break;
+            case LONG:
+                tmp = "long";
+                break;
+            case DOUBLE:
+                tmp = "double";
+                break;
+            default:
+                tmp = "text";
+                break;
         }
         return tmp;
     }

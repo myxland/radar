@@ -1,8 +1,6 @@
 package com.pgmmers.radar.service.impl.engine;
 
 
-import com.pgmmers.radar.enums.CombineType;
-import com.pgmmers.radar.enums.PluginType;
 import com.pgmmers.radar.enums.StatusType;
 import com.pgmmers.radar.service.common.CommonResult;
 import com.pgmmers.radar.service.engine.AntiFraudEngine;
@@ -12,6 +10,7 @@ import com.pgmmers.radar.service.engine.vo.AbstractionResult;
 import com.pgmmers.radar.service.engine.vo.ActivationResult;
 import com.pgmmers.radar.service.engine.vo.AdaptationResult;
 import com.pgmmers.radar.service.engine.vo.AntiFraudProcessResult;
+import com.pgmmers.radar.service.impl.engine.plugin.PluginManager;
 import com.pgmmers.radar.service.model.ModelService;
 import com.pgmmers.radar.service.model.PreItemService;
 import com.pgmmers.radar.vo.model.PreItemVO;
@@ -21,12 +20,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-
+/**
+ * 反欺诈主要服务,仅在引擎端启动的时候才需要加载。
+ * @author feihu.wang
+ */
 @Service
 @ConditionalOnProperty(prefix = "sys.conf", name="app", havingValue = "engine")
 public class AntiFraudServiceImpl implements AntiFraudService {
@@ -36,12 +37,12 @@ public class AntiFraudServiceImpl implements AntiFraudService {
     @Autowired
     private AntiFraudEngine antiFraudEngine;
 
-    @Autowired
+    @Autowired(required = false)
     private PluginService pluginService;
 
     @Autowired
     private PreItemService preItemService;
-    
+
     @Autowired
     private ModelService modelService;
 
@@ -109,48 +110,7 @@ public class AntiFraudServiceImpl implements AntiFraudService {
                 continue;
             }
             String[] sourceField = item.getSourceField().split(",");
-            PluginType plugin = Enum.valueOf(PluginType.class, item.getPlugin());
-            Object transfer = "";
-            switch (plugin) {
-            case IP2LOCATION:
-                transfer = pluginService.ip2location(jsonInfo.get(sourceField[0]).toString());
-                break;
-            case GPS2LOCATION:
-                transfer = pluginService.gps2location(jsonInfo.get(sourceField[0]).toString(),
-                        jsonInfo.get(sourceField[1]).toString());
-                break;
-            case ALLINONE:
-                List<Object> values = new ArrayList<>();
-                for (String field : sourceField) {
-                    values.add(jsonInfo.get(field));
-                }
-                transfer = pluginService.allInOne(values, CombineType.CONCAT);
-                break;
-            case SUBSTRING:
-                String[] args = item.getArgs().split(",");
-                transfer = pluginService.subString(jsonInfo.get(sourceField[0]).toString(), Integer.parseInt(args[0]), Integer.parseInt(args[1]));
-                break;
-            case MOBILE2LOCATION:
-                transfer = pluginService.mobile2location(jsonInfo.get(sourceField[0]).toString());
-                break;
-            case SENSITIVE_TIME:
-                Long millis = Long.parseLong(jsonInfo.get(sourceField[0]).toString());
-                transfer = pluginService.getSensitiveTime(millis);
-                break;
-            case DATEFORMAT:
-                String  formatStr = item.getArgs();
-                millis = Long.parseLong(jsonInfo.get(sourceField[0]).toString());
-                transfer = pluginService.formatDate(millis, formatStr);
-                break;
-            case HTTP_UTIL:
-                String  url = item.getArgs();
-                String  reqType = item.getReqType();
-                String arg = jsonInfo.get(sourceField[0]).toString();
-                transfer = pluginService.httpRequest(url, reqType, arg);
-                break;
-            default:
-
-            }
+            Object transfer = PluginManager.pluginServiceMap().get(item.getPlugin()).handle(item,jsonInfo,sourceField);
             result.put(item.getDestField(), transfer);
         }
         return result;

@@ -8,27 +8,50 @@ import com.pgmmers.radar.enums.StatusType;
 import com.pgmmers.radar.service.dnn.Estimator;
 import com.pgmmers.radar.service.engine.AggregateCommand;
 import com.pgmmers.radar.service.engine.AntiFraudEngine;
-import com.pgmmers.radar.service.engine.vo.*;
+import com.pgmmers.radar.service.engine.vo.AbstractionResult;
+import com.pgmmers.radar.service.engine.vo.ActivationResult;
+import com.pgmmers.radar.service.engine.vo.AdaptationResult;
+import com.pgmmers.radar.service.engine.vo.HitObject;
+import com.pgmmers.radar.service.engine.vo.RiskObject;
 import com.pgmmers.radar.service.impl.dnn.EstimatorContainer;
-import com.pgmmers.radar.service.model.*;
+import com.pgmmers.radar.service.impl.util.JsonParserUtil;
+import com.pgmmers.radar.service.model.AbstractionService;
+import com.pgmmers.radar.service.model.ActivationService;
+import com.pgmmers.radar.service.model.DataListsService;
+import com.pgmmers.radar.service.model.EntityService;
+import com.pgmmers.radar.service.model.FieldService;
+import com.pgmmers.radar.service.model.ModelService;
+import com.pgmmers.radar.service.model.RuleService;
 import com.pgmmers.radar.util.DateUtils;
 import com.pgmmers.radar.util.GroovyScriptUtil;
-import com.pgmmers.radar.vo.model.*;
+import com.pgmmers.radar.vo.model.AbstractionVO;
+import com.pgmmers.radar.vo.model.ActivationVO;
+import com.pgmmers.radar.vo.model.DataListRecordVO;
+import com.pgmmers.radar.vo.model.DataListsVO;
+import com.pgmmers.radar.vo.model.FieldVO;
+import com.pgmmers.radar.vo.model.ModelVO;
+import com.pgmmers.radar.vo.model.RuleVO;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
-
-import java.math.BigDecimal;
-import java.util.*;
 
 @Service
 public class AntiFraudEngineImpl implements AntiFraudEngine {
     private static Logger logger = LoggerFactory.getLogger(AntiFraudEngineImpl.class);
 
-    private static Map<Long, Map<String, Object>> dataListCacheMap = new HashMap<Long, Map<String, Object>>();
-
+    private static Map<Long, Map<String, Object>> dataListCacheMap = new HashMap<>();
+    @Value("${sys.conf.machine-learning: true}")
+    private boolean machineLearning;
     @Autowired
     private EntityService entityService;
 
@@ -62,7 +85,7 @@ public class AntiFraudEngineImpl implements AntiFraudEngine {
         // 1. 解析 参数信息
         //JSONObject entity = (JSONObject) data.get("entity");
 
-        // 2. list abstraction 
+        // 2. list abstraction
         List<AbstractionVO> abstractions = abstractionService.listAbstraction(modelId);
 
         // 排除没有的定义 abstraction 的情况。
@@ -127,6 +150,9 @@ public class AntiFraudEngineImpl implements AntiFraudEngine {
             Object searchFieldVal = data.get("fields").get(searchField);
             if (searchFieldVal == null) {
                 searchFieldVal = data.get("preItems").get(searchField);
+                if (searchFieldVal == null) {
+                    searchFieldVal = JsonParserUtil.value(data.get("preItems"), searchField, null);
+                }
             }
             if (searchFieldVal == null) {
                 result.setMsg("search field value eq null!");
@@ -146,8 +172,11 @@ public class AntiFraudEngineImpl implements AntiFraudEngine {
                     }
                 }
                 if (functionFieldType == null) {
-                    result.setMsg("function field type is null");
-                    return result;
+                    // 因为预处理字段没有字段类型，暂时设置为String
+                    // TODO:  目前只有高级函数使用了 functionFieldType。
+                    //result.setMsg("function field type is null");
+                    //return result;
+                    functionFieldType = FieldType.valueOf("STRING");
                 }
             }
 
@@ -211,14 +240,15 @@ public class AntiFraudEngineImpl implements AntiFraudEngine {
     }
 
     /**
-     * 
+     *
      * 后续需要优化.delete from next version
-     * 
+     *
      * @param modelId
      * @return
      * @author feihu.wang
      * 2016年8月10日
      */
+    @Deprecated
     private Map<String, Object> getPrepareDataCollection(Long modelId) {
         Map<String, Object> dataListMap = null;
         if (dataListCacheMap.containsKey(modelId)) {
@@ -228,14 +258,14 @@ public class AntiFraudEngineImpl implements AntiFraudEngine {
         dataListMap = new HashMap<>();
         List<DataListsVO> list = dataListsService.listDataLists(modelId, StatusType.ACTIVE.getKey());
         // 系统自带黑/白名单
-        List<DataListsVO> list2 = dataListsService.listDataLists(0L, StatusType.ACTIVE.getKey());
+        List<DataListsVO> list2 = dataListsService.listDataLists(1L, StatusType.ACTIVE.getKey());
         list.addAll(list2);
 
         Map<String, String> dataListRecords;
         for (DataListsVO vo : list) {
             Long dataListId = vo.getId();
             List<DataListRecordVO> records = dataListsService.listDataListRecords(dataListId);
-            dataListRecords = new HashMap<String, String>();
+            dataListRecords = new HashMap<>();
             for (DataListRecordVO record : records) {
                 dataListRecords.put(record.getDataRecord(), "");
             }
@@ -248,10 +278,13 @@ public class AntiFraudEngineImpl implements AntiFraudEngine {
     @Override
     public AdaptationResult executeAdaptation(Long modelId, Map<String, Map<String, ?>> data) {
         AdaptationResult result = new AdaptationResult();
-        Estimator estimator = estimatorContainer.getByModelId(modelId);
-        if(estimator != null) {
-            float score = estimator.predict(modelId, data);
-            result.getAdaptationMap().put("score", score);
+//      启动机器学习
+        if (machineLearning){
+            Estimator estimator = estimatorContainer.getByModelId(modelId);
+            if(estimator != null) {
+                float score = estimator.predict(modelId, data);
+                result.getAdaptationMap().put("score", score);
+            }
         }
         result.setSuccess(true);
         data.put("adaptations", result.getAdaptationMap());
@@ -264,7 +297,7 @@ public class AntiFraudEngineImpl implements AntiFraudEngine {
         List<ActivationVO> activations = activationService.listActivation(modelId);
         // 获取预加载的黑/白名单集合
         Map<String, Object> dataCollectionMap = dataListsService.getDataListMap(modelId);
-        
+
         for (ActivationVO act : activations) {
             if (!act.getStatus().equals(StatusType.ACTIVE.getKey())) {
                 continue;
@@ -291,9 +324,24 @@ public class AntiFraudEngineImpl implements AntiFraudEngine {
                     BigDecimal extra = BigDecimal.ZERO;
                     String by = rule.getAbstractionName();
                     if (!StringUtils.isEmpty(by)) {
-                        Object abs = data.get("abstractions").get(rule.getAbstractionName());
-                        if (abs != null) {
-                            extra = new BigDecimal(abs.toString());
+                        if (by.indexOf(".") != -1) {
+                            //目前 被操作数 支持 基础字段和抽象字段。
+                            String[] varNames = by.split("\\.");
+                            Object val = null;
+                            if (varNames[0].equals("fields")) {
+                                val = data.get("fields").get(varNames[1]);
+                            } else if (varNames[0].equals("abstractions")) {
+                                val = data.get("abstractions").get(varNames[1]);
+                            }
+                            if (val instanceof Number) {
+                                extra = new BigDecimal(val.toString());
+                            }
+                        } else {
+                            //兼容以前的处理。
+                            Object abs = data.get("abstractions").get(rule.getAbstractionName());
+                            if (abs != null) {
+                                extra = new BigDecimal(abs.toString());
+                            }
                         }
                     }
                     extra = extra.multiply(rate);
@@ -347,9 +395,9 @@ public class AntiFraudEngineImpl implements AntiFraudEngine {
     }
 
     /**
-     * 
+     *
      * 检查数据是否符合条件.
-     * 
+     *
      * @param ruleScript string
      * @param entity map of params
      * @param dataCollectionMap like black list
@@ -357,7 +405,7 @@ public class AntiFraudEngineImpl implements AntiFraudEngine {
      * @author feihu.wang
      * 2016年8月2日
      */
-    private boolean checkAbstractionScript(String ruleScript, Map entity, Map<String, Object> dataCollectionMap) {
+    private Boolean checkAbstractionScript(String ruleScript, Map entity, Map<String, Object> dataCollectionMap) {
         Object[] args = { entity, dataCollectionMap };
         Boolean ret = false;
         try {
@@ -369,7 +417,7 @@ public class AntiFraudEngineImpl implements AntiFraudEngine {
         return ret;
     }
 
-    private boolean checkActivationScript(String ruleScript, Map data, Map<String, Object> dataCollectionMap) {
+    private Boolean checkActivationScript(String ruleScript, Map data, Map<String, Object> dataCollectionMap) {
         Object[] args = { data, dataCollectionMap };
         Boolean ret = false;
         try {

@@ -1,9 +1,20 @@
+/*
+ * Copyright (c) 2019 WangFeiHu
+ *  Radar is licensed under Mulan PSL v2.
+ *  You can use this software according to the terms and conditions of the Mulan PSL v2.
+ *  You may obtain a copy of Mulan PSL v2 at:
+ *  http://license.coscl.org.cn/MulanPSL2
+ *  THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ *  See the Mulan PSL v2 for more details.
+ */
+
 package com.pgmmers.radar.controller;
 
 
 import com.pgmmers.radar.dal.bean.ModelQuery;
 import com.pgmmers.radar.enums.StatusType;
 import com.pgmmers.radar.intercpt.ContextHolder;
+import com.pgmmers.radar.service.admin.UserService;
 import com.pgmmers.radar.service.common.CommonResult;
 import com.pgmmers.radar.service.model.ModelService;
 import com.pgmmers.radar.vo.admin.UserVO;
@@ -29,16 +40,19 @@ public class ModelApiController  {
     @Autowired
     private ContextHolder contextHolder;
 
+    @Autowired
+    private UserService userService;
+
     @GetMapping("/{id}")
     public CommonResult get(@PathVariable Long id) {
         CommonResult result = new CommonResult();
-        ModelVO modelVO = modelService.get(id);
+        ModelVO modelVO = modelService.getModelById(id);
         if (modelVO != null) {
             result.setSuccess(true);
             result.getData().put("model", modelVO);
         }
         return result;
-    }   
+    }
 
     @GetMapping("/list")
 	public CommonResult list(HttpServletRequest request) {
@@ -96,6 +110,13 @@ public class ModelApiController  {
     @PostMapping("/build/{id}")
     public CommonResult build(@PathVariable Long id) {
         CommonResult result = new CommonResult();
+        String userName = contextHolder.getContext().getUsername();
+        UserVO userVO = userService.getByUserName(userName);
+        if (userVO.getVipLevel() <= 0) {
+            result.setSuccess(false);
+            result.setMsg("服务器资源有限，请联系作者开通VIP权限！");
+            return result;
+        }
         try {
             result = modelService.build(id);
         } catch (Exception e) {
@@ -108,22 +129,20 @@ public class ModelApiController  {
 
     @PostMapping("/enable/{id}")
     public CommonResult enable(@PathVariable Long id) {
-        ModelVO modelVO = modelService.get(id);
+        ModelVO modelVO = modelService.getModelById(id);
         modelVO.setStatus(StatusType.ACTIVE.getKey());
         return modelService.save(modelVO);
     }
 
     @PostMapping("/disable/{id}")
     public CommonResult disable(@PathVariable Long id) {
-        ModelVO modelVO = modelService.get(id);
+        ModelVO modelVO = modelService.getModelById(id);
         modelVO.setStatus(StatusType.INACTIVE.getKey());
         return modelService.save(modelVO);
     }
 
     @PostMapping("/copy")
 	public CommonResult copy(@RequestBody ModelVO model, HttpServletRequest request) {
-//    	HttpSession session = request.getSession();
-//        UserVO user = (UserVO) session.getAttribute("user");
         return modelService.copy(model.getId(), contextHolder.getContext().getCode(), model.getModelName(), model.getLabel());
 	}
 

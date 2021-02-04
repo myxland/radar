@@ -168,15 +168,15 @@ CREATE TABLE `engine_data_lists` (
 -- ----------------------------
 -- Records of engine_data_lists
 -- ----------------------------
-INSERT INTO `engine_data_lists` VALUES ('1', 'radar_brand_black_List', '[系统]手机品牌黑名单', '0', '', 'BLACK', '1', '2016-08-10 16:02:29', '2016-08-10 16:02:31');
-INSERT INTO `engine_data_lists` VALUES ('3', 'radar_mobile_black_list', '[系统]手机号码黑名单', '0', '', 'BLACK', '1', '2016-08-24 18:37:52', '2016-08-24 18:37:55');
-INSERT INTO `engine_data_lists` VALUES ('5', 'radar_mobile_white_list', '[系统]手机号码白名单', '0', '', 'WHITE', '1', '2016-08-24 18:38:55', '2016-08-24 18:38:58');
-INSERT INTO `engine_data_lists` VALUES ('7', 'radar_ip_black_list', '[系统]IP黑名单', '0', '', 'BLACK', '1', '2016-08-25 11:22:12', '2016-08-25 11:22:16');
-INSERT INTO `engine_data_lists` VALUES ('9', 'radar_ip_white_list', '[系统]IP白名单', '0', '', 'WHITE', '1', '2016-09-18 10:27:25', '2016-09-18 10:27:25');
+INSERT INTO `engine_data_lists` VALUES ('1', 'radar_brand_black_List', '[系统]手机品牌黑名单', '1', '', 'BLACK', '1', '2016-08-10 16:02:29', '2016-08-10 16:02:31');
+INSERT INTO `engine_data_lists` VALUES ('3', 'radar_mobile_black_list', '[系统]手机号码黑名单', '1', '', 'BLACK', '1', '2016-08-24 18:37:52', '2016-08-24 18:37:55');
+INSERT INTO `engine_data_lists` VALUES ('5', 'radar_mobile_white_list', '[系统]手机号码白名单', '1', '', 'WHITE', '1', '2016-08-24 18:38:55', '2016-08-24 18:38:58');
+INSERT INTO `engine_data_lists` VALUES ('7', 'radar_ip_black_list', '[系统]IP黑名单', '1', '', 'BLACK', '1', '2016-08-25 11:22:12', '2016-08-25 11:22:16');
+INSERT INTO `engine_data_lists` VALUES ('9', 'radar_ip_white_list', '[系统]IP白名单', '1', '', 'WHITE', '1', '2016-09-18 10:27:25', '2016-09-18 10:27:25');
+INSERT INTO `engine_data_lists` VALUES ('10', 'mobile_brand_white_list', '[系统]手机品牌白名单', '1', '', 'WHITE', '1', '2016-11-23 16:07:31', '2016-11-23 16:07:31');
 INSERT INTO `engine_data_lists` VALUES ('29', 'mobile_white_list', '手机号码白名单', '101', '', 'WHITE', '1', '2016-11-21 14:07:29', '2016-11-21 14:07:29');
 INSERT INTO `engine_data_lists` VALUES ('31', 'mobile_white_list', '手机号码白名单', '103', '', 'WHITE', '1', '2016-11-21 14:09:57', '2016-11-21 14:09:57');
 INSERT INTO `engine_data_lists` VALUES ('33', 'mobile_white_list', '手机号码白名单', '99', '', 'WHITE', '1', '2016-11-21 14:11:37', '2016-11-21 14:11:37');
-INSERT INTO `engine_data_lists` VALUES ('35', 'mobile_brand_white_list', '[系统]手机品牌白名单', '0', '', 'WHITE', '1', '2016-11-23 16:07:31', '2016-11-23 16:07:31');
 INSERT INTO `engine_data_lists` VALUES ('84', 'mobile_white_list', '手机号码白名单', '222', '', 'WHITE', '1', '2019-09-10 11:16:12', '2019-09-10 11:16:12');
 INSERT INTO `engine_data_lists` VALUES ('85', 'mobile_white_list', '手机号码白名单', '224', '', 'WHITE', '1', '2019-09-11 18:05:35', '2019-09-11 18:05:35');
 
@@ -540,8 +540,8 @@ CREATE TABLE `engine_model` (
 INSERT INTO `engine_model` VALUES ('99', '697AA0D6-4B0F-4B57-A487-345CB10BDD8A', 'login_template', '登录行为模板', 'userId', 'eventId', 'loginTime', '0', 'pgmmer.top', '1', null, '0', '2016-11-17 10:59:43', '2016-11-18 18:02:15');
 INSERT INTO `engine_model` VALUES ('101', '3EAE4543-814B-4AAB-9C96-F3172D2C9B16', 'register_template', '注册行为模板', 'userId', 'eventId', 'registerTime', '0', 'pgmmer.top', '1', null, '0', '2016-11-17 15:50:49', '2016-11-18 18:02:22');
 INSERT INTO `engine_model` VALUES ('103', '03355AB9-4396-4740-8CA2-4E6643CDC0F1', 'transaction_template', '交易行为模板', 'userId', 'eventId', 'eventTime', '0', 'pgmmer.top', '1', null, '0', '2016-11-17 16:06:31', '2016-11-17 16:10:02');
-INSERT INTO `engine_model` VALUES ('222', 'B6B69670-2E27-4363-8D7D-B6CBC73CEB60', 'model_222', 'Ting注册', 'userId', 'eventId', 'registerTime', '0', 'pgmmer.top', '0', null, '1', '2016-11-17 15:50:49', '2019-09-11 13:42:48');
-INSERT INTO `engine_model` VALUES ('224', 'DB8A078F-97FE-4A7F-AAC0-5AF1A6C36CE8', 'model_224', 'Ting提现', 'userId', 'eventId', 'eventTime', '0', 'pgmmer.top', '0', null, '1', '2016-11-17 16:06:31', '2019-09-11 18:07:23');
+INSERT INTO `engine_model` VALUES ('222', 'B6B69670-2E27-4363-8D7D-B6CBC73CEB60', 'model_222', 'Ting注册', 'userId', 'eventId', 'registerTime', '0', 'pgmmer.top', '0', null, '0', '2016-11-17 15:50:49', '2019-09-11 13:42:48');
+INSERT INTO `engine_model` VALUES ('224', 'DB8A078F-97FE-4A7F-AAC0-5AF1A6C36CE8', 'model_224', 'Ting提现', 'userId', 'eventId', 'eventTime', '0', 'pgmmer.top', '0', null, '0', '2016-11-17 16:06:31', '2019-09-11 18:07:23');
 
 -- ----------------------------
 -- Table structure for engine_pre_item

@@ -1,16 +1,26 @@
+/*
+ * Copyright (c) 2019 WangFeiHu
+ *  Radar is licensed under Mulan PSL v2.
+ *  You can use this software according to the terms and conditions of the Mulan PSL v2.
+ *  You may obtain a copy of Mulan PSL v2 at:
+ *  http://license.coscl.org.cn/MulanPSL2
+ *  THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ *  See the Mulan PSL v2 for more details.
+ */
+
 package com.pgmmers.radar.controller;
 
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-
 import com.pgmmers.radar.dal.bean.EventExportQuery;
 import com.pgmmers.radar.dal.bean.EventQuery;
 import com.pgmmers.radar.dal.bean.PageResult;
 import com.pgmmers.radar.dal.bean.TermQuery;
-import com.pgmmers.radar.enums.PluginType;
 import com.pgmmers.radar.service.common.CommonResult;
+import com.pgmmers.radar.service.engine.PluginServiceV2;
 import com.pgmmers.radar.service.engine.vo.DataColumnInfo;
 import com.pgmmers.radar.service.enums.DataType;
+import com.pgmmers.radar.service.impl.engine.plugin.PluginManager;
 import com.pgmmers.radar.service.logs.EventService;
 import com.pgmmers.radar.service.model.ActivationService;
 import com.pgmmers.radar.service.model.FieldService;
@@ -22,13 +32,6 @@ import com.pgmmers.radar.vo.model.FieldVO;
 import com.pgmmers.radar.vo.model.PreItemVO;
 import com.pgmmers.radar.vo.model.RuleVO;
 import io.swagger.annotations.Api;
-import org.apache.poi.ss.usermodel.Workbook;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
-
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -36,12 +39,22 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 以后会独立拆分到分析子项目里面去。
  * @author  feihu.wang
  */
-@Deprecated
 @RestController
 @RequestMapping("/services/v1/event")
 @Api(value = "EventApi", description = "事件信息检索接口相关操作",  tags = {"事件信息检索分析API"}, hidden = true)
@@ -62,7 +75,7 @@ public class EventApiController {
 
 
     @PostMapping("/query")
-    public CommonResult query(@RequestBody EventQuery query) {
+    public CommonResult query(@RequestBody EventQuery query) throws IOException {
         CommonResult result = new CommonResult();
         List<Object> list = eventService.query(query);
         result.getData().put("page", list);
@@ -74,7 +87,7 @@ public class EventApiController {
     @PostMapping("/search")
     public CommonResult search(@RequestBody TermQuery term, HttpSession session) {
         CommonResult result = new CommonResult();
-        PageResult<Object> page = new PageResult<>(1, 10, 0, new ArrayList<>());
+        PageResult<Object> page ;
         page = eventService.query(term);
         if (page != null) {
             result.getData().put("page", page);
@@ -105,7 +118,7 @@ public class EventApiController {
             return;
         }
         EventExportQuery query = (EventExportQuery) request.getSession().getAttribute("exportQuery");
-        
+
         if (query == null) {
             return;
         }
@@ -179,8 +192,7 @@ public class EventApiController {
             if (!itemsIdMap.containsKey(item.getDestField())) {
                 continue;
             }
-            PluginType plugin = Enum
-                    .valueOf(PluginType.class, item.getPlugin());
+            PluginServiceV2 plugin= PluginManager.pluginServiceMap().get(item.getPlugin());
             String type = plugin.getType();
             String meta = plugin.getMeta();
 
@@ -239,9 +251,10 @@ public class EventApiController {
         String file = "e:\\tmp\\" + System.currentTimeMillis() + ".xlsx";
         FileOutputStream fos = null;
 
-
-        response.setContentType("application/ms-excel");// 设置相应类型,告诉浏览器输出的内容为图片
-        response.setHeader("Pragma", "No-cache");// 设置响应头信息，告诉浏览器不要缓存此内容
+        // 设置相应类型,告诉浏览器输出的内容为图片
+        response.setContentType("application/ms-excel");
+        // 设置响应头信息，告诉浏览器不要缓存此内容
+        response.setHeader("Pragma", "No-cache");
         response.setHeader("Cache-Control", "no-cache");
         response.setDateHeader("Expire", 0);
         OutputStream os = null;
